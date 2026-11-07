@@ -1,0 +1,68 @@
+name: Build Manga World APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find and extract project ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "ZIP files found in repository:"
+          find . -type f -iname '*.zip' -print
+
+          ZIP="$(find . -type f -iname '*Mobile-Build*.zip' -print -quit)"
+          if [ -z "$ZIP" ]; then
+            ZIP="$(find . -type f -iname '*.zip' -print -quit)"
+          fi
+
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: No ZIP file was found in the repository."
+            exit 1
+          fi
+
+          echo "Using project archive: $ZIP"
+          mkdir -p /tmp/mangaworld-project
+          unzip -q "$ZIP" -d /tmp/mangaworld-project
+
+          PROJECT_DIR="$(dirname "$(find /tmp/mangaworld-project -type f -name 'settings.gradle.kts' -print -quit)")"
+          if [ -z "$PROJECT_DIR" ] || [ "$PROJECT_DIR" = "." ]; then
+            echo "ERROR: Could not find settings.gradle.kts inside the ZIP."
+            echo "Archive contents:"
+            find /tmp/mangaworld-project -maxdepth 4 -type f -print
+            exit 1
+          fi
+
+          echo "Android project root: $PROJECT_DIR"
+          cp -a "$PROJECT_DIR"/. "$GITHUB_WORKSPACE"/
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MangaWorld-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
